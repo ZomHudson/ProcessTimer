@@ -6,9 +6,9 @@
 <title>Process Timer</title>
 <style>
 :root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
---bg:#f5f6f8;--card:#fff;--text:#1b1f24;--muted:#6a7380;--line:#e1e5ea;--accent:#2563eb;--ok:#16a34a;--bar:#dbe4f5}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111418;--card:#1b2027;--text:#e8ebef;--muted:#8b94a1;--line:#2c333c;--accent:#60a5fa;--ok:#4ade80;--bar:#2a3547}}
-:root[data-theme="dark"]{--bg:#111418;--card:#1b2027;--text:#e8ebef;--muted:#8b94a1;--line:#2c333c;--accent:#60a5fa;--ok:#4ade80;--bar:#2a3547}
+--bg:#f5f6f8;--card:#fff;--text:#1b1f24;--muted:#6a7380;--line:#e1e5ea;--accent:#2563eb;--ok:#16a34a;--bar:#dbe4f5;--danger:#dc2626}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111418;--card:#1b2027;--text:#e8ebef;--muted:#8b94a1;--line:#2c333c;--accent:#60a5fa;--ok:#4ade80;--bar:#2a3547;--danger:#f87171}}
+:root[data-theme="dark"]{--bg:#111418;--card:#1b2027;--text:#e8ebef;--muted:#8b94a1;--line:#2c333c;--accent:#60a5fa;--ok:#4ade80;--bar:#2a3547;--danger:#f87171}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 *,*:before,*:after{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -20,13 +20,24 @@ input{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(-
 input[type=number]{width:70px}
 input[type=datetime-local]{width:100%}
 button{font:inherit;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:8px 14px;cursor:pointer}
+button.add{width:100%;background:transparent;color:var(--accent);border:1px dashed var(--accent);margin-bottom:12px}
+button.ic{background:var(--bg);color:var(--text);border:1px solid var(--line);padding:4px 9px}
+button.ic.del{color:var(--danger)}
+button:disabled{opacity:.35;cursor:default}
 .row{display:flex;gap:8px;align-items:flex-end}
 .step{border-top:1px solid var(--line);padding:12px 0}
-.step:first-of-type{border-top:0}
+.step:first-child{border-top:0;padding-top:0}
+.step:last-child{padding-bottom:0}
 .sh{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
-.nameIn{font-weight:600;flex:1;min-width:0;max-width:60%}
-.dur{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:14px}
-.times{display:flex;justify-content:space-between;font-size:14px;color:var(--muted);margin-top:6px}
+.nameWrap{display:flex;align-items:center;gap:6px;flex:1;min-width:0;max-width:65%}
+.nameIn{font:inherit;font-weight:600;font-size:17px;width:100%;min-width:0;background:transparent;border:0;border-bottom:1px dashed transparent;border-radius:0;padding:2px 0}
+.nameIn:hover{border-bottom-color:var(--muted)}
+.nameIn:focus{outline:0;border-bottom:1px solid var(--accent)}
+.pen{font-style:normal;color:var(--muted);font-size:13px;opacity:.8}
+.nameWrap:focus-within .pen{color:var(--accent)}
+.dur{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:14px;margin-top:8px}
+.sp{flex:1}
+.times{display:flex;justify-content:space-between;font-size:14px;color:var(--muted);margin-top:6px;gap:8px;flex-wrap:wrap}
 .times b{color:var(--text);font-weight:600}
 .bar{height:6px;background:var(--bar);border-radius:3px;margin-top:8px;overflow:hidden}
 .bar i{display:block;height:100%;width:0;background:var(--accent)}
@@ -51,6 +62,7 @@ button{font:inherit;background:var(--accent);color:#fff;border:0;border-radius:8
 </div>
 
 <div class="card" id="steps"></div>
+<button class="add" id="add">+ Add process</button>
 
 <div class="card end">
   <div class="sub">Process ends at</div>
@@ -61,48 +73,60 @@ button{font:inherit;background:var(--accent);color:#fff;border:0;border-radius:8
 </main>
 
 <script>
-const defaults=[{n:"Precon",h:2,m:0},{n:"Leak test",h:0,m:30},{n:"Degassing",h:4,m:0}];
-let steps=defaults.map(s=>({...s}));
+let steps=[{n:"Precon",h:2,m:0},{n:"Leak test",h:0,m:30},{n:"Degassing",h:4,m:0}];
 let startVal="";
-try{const s=JSON.parse(localStorage.getItem("proc-timer")||"null");if(s&&s.steps&&s.steps.length===3){steps=s.steps;startVal=s.start||""}}catch(e){}
+try{
+  const s=JSON.parse(localStorage.getItem("proc-timer")||"null");
+  if(s&&Array.isArray(s.steps)&&s.steps.length){
+    steps=s.steps.map(x=>({n:String(x.n||""),h:Math.max(0,+x.h||0),m:Math.max(0,+x.m||0)}));
+    startVal=s.start||"";
+  }
+}catch(e){}
 
 const pad=n=>String(n).padStart(2,"0");
 const toLocal=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 const fmtT=d=>`${pad(d.getHours())}:${pad(d.getMinutes())}`;
 const fmtD=d=>d.toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short"});
 const fmtDur=ms=>{const t=Math.max(0,Math.round(ms/60000));return `${Math.floor(t/60)}h ${pad(t%60)}m`};
+const esc=s=>s.replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
 
 const startEl=document.getElementById("start");
 startEl.value=startVal||toLocal(new Date());
 const box=document.getElementById("steps");
 
-box.innerHTML=steps.map((s,i)=>`
+function save(){try{localStorage.setItem("proc-timer",JSON.stringify({steps,start:startEl.value}))}catch(e){}}
+
+function build(){
+  box.innerHTML=steps.map((s,i)=>`
 <div class="step">
-  <div class="sh"><input class="nameIn" id="n${i}" value="${s.n.replace(/"/g,'&quot;')}" aria-label="Step ${i+1} name" maxlength="40"><span class="tag" id="tag${i}">–</span></div>
-  <div class="dur" style="margin-top:8px">
-    <input type="number" min="0" id="h${i}" value="${s.h}"> h
-    <input type="number" min="0" max="59" id="m${i}" value="${s.m}"> min
+  <div class="sh">
+    <span class="nameWrap"><input class="nameIn" data-f="n" data-i="${i}" value="${esc(s.n)}" placeholder="Process name" maxlength="40" aria-label="Process ${i+1} name"><i class="pen">✎</i></span>
+    <span class="tag" id="tag${i}">–</span>
+  </div>
+  <div class="dur">
+    <input type="number" min="0" data-f="h" data-i="${i}" value="${s.h}" aria-label="Hours"> h
+    <input type="number" min="0" data-f="m" data-i="${i}" value="${s.m}" aria-label="Minutes"> min
+    <span class="sp"></span>
+    <button class="ic" data-act="up" data-i="${i}" title="Move up" ${i===0?"disabled":""}>↑</button>
+    <button class="ic" data-act="down" data-i="${i}" title="Move down" ${i===steps.length-1?"disabled":""}>↓</button>
+    <button class="ic del" data-act="del" data-i="${i}" title="Remove" ${steps.length===1?"disabled":""}>✕</button>
   </div>
   <div class="times"><span>Start <b id="s${i}"></b></span><span>End <b id="e${i}"></b></span></div>
   <div class="bar"><i id="b${i}"></i></div>
 </div>`).join("");
-
-function save(){try{localStorage.setItem("proc-timer",JSON.stringify({steps,start:startEl.value}))}catch(e){}}
+  render();
+}
 
 function render(){
   const now=Date.now();
   let t=new Date(startEl.value).getTime();
-  if(isNaN(t)){t=now}
+  if(isNaN(t)) t=now;
   steps.forEach((s,i)=>{
-    s.n=document.getElementById("n"+i).value;
-    s.h=Math.max(0,parseInt(document.getElementById("h"+i).value)||0);
-    s.m=Math.max(0,parseInt(document.getElementById("m"+i).value)||0);
     const dur=(s.h*60+s.m)*60000, st=t, en=t+dur;
     document.getElementById("s"+i).textContent=fmtT(new Date(st))+" · "+fmtD(new Date(st));
     document.getElementById("e"+i).textContent=fmtT(new Date(en))+" · "+fmtD(new Date(en));
     const tag=document.getElementById("tag"+i),bar=document.getElementById("b"+i);
-    let pct=dur?Math.min(100,Math.max(0,(now-st)/dur*100)):(now>=en?100:0);
-    bar.style.width=pct+"%";
+    bar.style.width=(dur?Math.min(100,Math.max(0,(now-st)/dur*100)):(now>=en?100:0))+"%";
     if(now>=en){tag.textContent="Done";tag.className="tag done"}
     else if(now>=st){tag.textContent="Running · "+fmtDur(en-now)+" left";tag.className="tag run"}
     else{tag.textContent="Starts in "+fmtDur(st-now);tag.className="tag"}
@@ -111,11 +135,32 @@ function render(){
   const end=new Date(t);
   document.getElementById("endTime").textContent=fmtT(end);
   document.getElementById("endDate").textContent=fmtD(end);
-  document.getElementById("remain").textContent=now>=t?"✅ Process finished":"Total remaining: "+fmtDur(t-now);
+  document.getElementById("remain").textContent=now>=t?"✅ All processes finished":"Total remaining: "+fmtDur(t-now);
 }
-document.querySelectorAll("input").forEach(el=>el.addEventListener("input",()=>{render();save()}));
+
+box.addEventListener("input",e=>{
+  const el=e.target,f=el.dataset.f;
+  if(!f) return;
+  const i=+el.dataset.i;
+  steps[i][f]=f==="n"?el.value:Math.max(0,parseInt(el.value)||0);
+  render();save();
+});
+box.addEventListener("click",e=>{
+  const b=e.target.closest("button[data-act]");
+  if(!b) return;
+  const i=+b.dataset.i,a=b.dataset.act;
+  if(a==="del"&&steps.length>1) steps.splice(i,1);
+  else if(a==="up"&&i>0) [steps[i-1],steps[i]]=[steps[i],steps[i-1]];
+  else if(a==="down"&&i<steps.length-1) [steps[i+1],steps[i]]=[steps[i],steps[i+1]];
+  build();save();
+});
+document.getElementById("add").onclick=()=>{
+  steps.push({n:"Process "+(steps.length+1),h:1,m:0});
+  build();save();
+};
+startEl.addEventListener("input",()=>{render();save()});
 document.getElementById("now").onclick=()=>{startEl.value=toLocal(new Date());render();save()};
-render();setInterval(render,15000);
+build();setInterval(render,15000);
 </script>
 </body>
 </html>
